@@ -151,7 +151,7 @@ CREATE TABLE ventas (
             AND motivo_anulacion IS NOT NULL
             AND CHAR_LENGTH(TRIM(motivo_anulacion)) >= 10)
     ),
-    INDEX idx_ventas_estado_fecha (estado, fecha),
+    INDEX idx_ventas_estado_fecha (estado, fecha_confirmacion),
     INDEX idx_ventas_cliente (cliente_id)
 ) ENGINE=InnoDB;
 
@@ -292,6 +292,36 @@ CREATE TRIGGER trg_movimientos_sin_borrado
 BEFORE DELETE ON movimientos_inventario FOR EACH ROW
 SIGNAL SQLSTATE '45000'
     SET MESSAGE_TEXT = 'RF-06: el historial de inventario no se elimina';
+
+-- RN-05: proteccion del detalle de ventas; solo se modifica en BORRADOR.
+DELIMITER $$
+
+CREATE TRIGGER trg_detalle_venta_ins BEFORE INSERT ON detalle_venta FOR EACH ROW
+BEGIN
+    IF (SELECT estado FROM ventas WHERE id = NEW.venta_id) <> 'BORRADOR' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RN-05: solo se agregan productos a ventas en BORRADOR';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_detalle_venta_upd BEFORE UPDATE ON detalle_venta FOR EACH ROW
+BEGIN
+    IF (SELECT estado FROM ventas WHERE id = OLD.venta_id) <> 'BORRADOR' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RN-05: el detalle de una venta confirmada o anulada no se modifica';
+    END IF;
+
+    IF (SELECT estado FROM ventas WHERE id = NEW.venta_id) <> 'BORRADOR' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RN-05: solo se trasladan detalles a ventas en BORRADOR';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_detalle_venta_del BEFORE DELETE ON detalle_venta FOR EACH ROW
+BEGIN
+    IF (SELECT estado FROM ventas WHERE id = OLD.venta_id) <> 'BORRADOR' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RN-05: el detalle de una venta confirmada o anulada no se elimina';
+    END IF;
+END$$
+
+DELIMITER ;
 
 -- 10. DATOS DE PRUEBA
 -- Usuarios y contrasenas son EXCLUSIVAMENTE para desarrollo local.
