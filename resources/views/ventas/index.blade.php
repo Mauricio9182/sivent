@@ -1,18 +1,25 @@
 @extends('layouts.app')
 @section('titulo', 'Ventas')
 @section('contenido')
-<h4>Ventas</h4>
-<table class="table table-sm table-striped bg-white">
-    <thead><tr><th>ID</th><th>No.</th><th>Cliente</th><th>Estado</th><th class="text-end">Total</th><th></th></tr></thead>
+@php $borradores = collect($ventas)->where('estado', 'BORRADOR')->count(); @endphp
+<h1 class="h3">Ventas</h1>
+<p class="text-muted">{{ $borradores }} {{ $borradores === 1 ? 'venta pendiente' : 'ventas pendientes' }} de confirmar.</p>
+<div class="card"><div class="table-responsive">
+<table class="table table-hover align-middle mb-0">
+    <thead><tr><th>ID</th><th>N.°</th><th>Cliente</th><th>Estado</th><th class="text-end">Total</th><th></th></tr></thead>
     <tbody>
-    @foreach ($ventas as $v)
+    @forelse ($ventas as $v)
         <tr>
-            <td>{{ $v->id }}</td><td>{{ $v->numero ?? '—' }}</td><td>{{ $v->cliente ?? 'Consumidor Final' }}</td>
-            <td><span class="badge text-bg-{{ $v->estado === 'CONFIRMADA' ? 'success' : ($v->estado === 'ANULADA' ? 'danger' : 'secondary') }}">{{ $v->estado }}</span></td>
-            <td class="text-end">{{ $v->total }}</td>
-            <td><a class="btn btn-sm btn-outline-primary" href="{{ route('ventas.show', $v->id) }}">Ver</a></td>
+            <td>{{ $v->id }}</td>
+            <td>{{ $v->numero ?? '—' }}</td>
+            <td>{{ $v->cliente ?? 'Consumidor Final' }}</td>
+            <td><span class="badge text-bg-{{ $v->estado === 'CONFIRMADA' ? 'success' : ($v->estado === 'ANULADA' ? 'danger' : 'secondary') }}">{{ ucfirst(strtolower($v->estado)) }}</span></td>
+            <td class="text-end">Q {{ number_format($v->total, 2) }}</td>
+            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ route('ventas.show', $v->id) }}">{{ $v->estado === 'BORRADOR' ? 'Revisar y confirmar' : 'Ver comprobante' }}</a></td>
         </tr>
-    @endforeach
+    @empty
+        <tr><td colspan="6" class="text-muted p-4">Todavía no hay ventas registradas.</td></tr>
+    @endforelse
     </tbody>
-</table>
+</table></div></div>
 @endsection
