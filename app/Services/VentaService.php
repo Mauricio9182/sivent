@@ -34,7 +34,7 @@ class VentaService
     {
         // a. Sesión, rol y token
         if (!$usuario || !$usuario->activo) {
-            throw new VentaException('Sesión no válida. Inicie sesión de nuevo.', 401, 'TOKEN_INVALIDO');
+          throw new VentaException('Sesión no válida. Inicie sesión de nuevo.', 401, 'SESION_INVALIDA');
         }
         $rol = DB::table('roles')->where('id', $usuario->rol_id)->value('nombre');
         if ($rol !== self::ROL_VENDEDOR) {

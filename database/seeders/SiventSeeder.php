@@ -160,16 +160,17 @@ class SiventSeeder extends Seeder
         ]);
     }
 
-    private function ventasBorrador(): void
+        private function ventasBorrador(): void
     {
         $tok = fn (int $n) => sprintf('da3a8248-ade9-4b1f-81ba-%012d', $n);
 
         // Ventas 1-3 (las usan las pruebas): 1 normal; 2 y 3 compiten por la
         // última unidad de PLOM-001 (RN-04).
-        // Ventas 4-6 (extra, creadas por vendedor2 = id 5):
+        // Ventas 4-7 (extra, creadas por vendedor2 = id 5):
         //   4: producto inactivo (HERR-002)            -> debe dar PRODUCTO_INACTIVO
         //   5: cantidad mayor a la existencia (HERR-001, 50 de 10) -> EXISTENCIA_INSUFICIENTE
         //   6: caso normal con 3 productos             -> se confirma sin problema
+        //   7: 1.5 martillos (HERR-001, unidad entera) -> debe dar CANTIDAD_INVALIDA (CP-09)
         DB::table('ventas')->insert([
             ['cliente_id' => 1, 'usuario_creacion_id' => 2, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(1)],
             ['cliente_id' => null, 'usuario_creacion_id' => 2, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(2)],
@@ -177,6 +178,7 @@ class SiventSeeder extends Seeder
             ['cliente_id' => 2, 'usuario_creacion_id' => 5, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(4)],
             ['cliente_id' => 3, 'usuario_creacion_id' => 5, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(5)],
             ['cliente_id' => 4, 'usuario_creacion_id' => 5, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(6)],
+            ['cliente_id' => 5, 'usuario_creacion_id' => 5, 'estado' => 'BORRADOR', 'total' => 0.00, 'token_confirmacion' => $tok(7)],
         ]);
 
         // [venta_id, producto_id, cantidad, precio_unitario, subtotal]
@@ -190,6 +192,7 @@ class SiventSeeder extends Seeder
             [6, 8, 2.00, 28.00, 56.00],
             [6, 12, 3.00, 52.00, 156.00],
             [6, 21, 4.00, 22.00, 88.00],
+            [7, 1, 1.50, 65.00, 97.50],
         ];
         DB::table('detalle_venta')->insert(array_map(fn ($d) => [
             'venta_id' => $d[0], 'producto_id' => $d[1], 'cantidad' => $d[2],
