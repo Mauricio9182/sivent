@@ -11,14 +11,22 @@ class PrototipoController extends Controller
     public function panel(): View
     {
         $role = $this->role();
+
+        // Cifras de inventario calculadas del mismo catálogo que ven Productos y Ventas.
+        $productos = collect(DatosDemo::productos());
+        $activos = $productos->where('activo', true)->count();
+        $bajas = $productos
+            ->filter(fn ($p) => $p['activo'] && $p['existencia'] < $p['minima'])
+            ->values();
+
         $stats = match ($role) {
             'Vendedor' => [['label' => 'Ventas de hoy', 'value' => '12', 'icon' => '↗'], ['label' => 'Pendientes', 'value' => '3', 'icon' => '⏱'], ['label' => 'Total vendido', 'value' => 'Q 4,860', 'icon' => 'Q']],
-            'Encargado de bodega' => [['label' => 'Productos activos', 'value' => '248', 'icon' => '▦'], ['label' => 'Existencias bajas', 'value' => '8', 'icon' => '!'], ['label' => 'Entradas del mes', 'value' => '36', 'icon' => '+']],
-            'Gerente' => [['label' => 'Ventas del mes', 'value' => 'Q 86,420', 'icon' => '↗'], ['label' => 'Margen estimado', 'value' => '24.8%', 'icon' => '%'], ['label' => 'Ventas anuladas', 'value' => '2', 'icon' => '×']],
-            default => [['label' => 'Ventas de hoy', 'value' => '18', 'icon' => '↗'], ['label' => 'Productos activos', 'value' => '248', 'icon' => '▦'], ['label' => 'Existencias bajas', 'value' => '8', 'icon' => '!']],
+            'Encargado de bodega' => [['label' => 'Productos activos', 'value' => (string) $activos, 'icon' => '▦'], ['label' => 'Existencias bajas', 'value' => (string) $bajas->count(), 'icon' => '!'], ['label' => 'Entradas del mes', 'value' => '36', 'icon' => '+']],
+            'Gerente' => [['label' => 'Ventas del mes', 'value' => 'Q 86,420', 'icon' => '↗'], ['label' => 'Existencias bajas', 'value' => (string) $bajas->count(), 'icon' => '!'], ['label' => 'Ventas anuladas', 'value' => '2', 'icon' => '×']],
+            default => [['label' => 'Ventas de hoy', 'value' => '18', 'icon' => '↗'], ['label' => 'Productos activos', 'value' => (string) $activos, 'icon' => '▦'], ['label' => 'Existencias bajas', 'value' => (string) $bajas->count(), 'icon' => '!']],
         };
 
-        return view('panel.index', ['stats' => $stats, 'role' => $role, 'lowStock' => collect(DatosDemo::productos())->where('existencia', '<', 5)->values()]);
+        return view('panel.index', ['stats' => $stats, 'role' => $role, 'lowStock' => $bajas]);
     }
 
     public function productos(): View
