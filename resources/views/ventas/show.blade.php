@@ -5,7 +5,7 @@
 <a href="{{ route('ventas.index') }}" class="btn btn-sm btn-link px-0">&laquo; Volver al listado</a>
 <div class="card"><div class="card-body">
     <div class="d-flex justify-content-between flex-wrap gap-2">
-        <h1 class="h4 mb-0">{{ $est === 'BORRADOR' ? 'Venta pendiente' : 'Comprobante interno' }} #{{ $v['id'] }} @if($v['numero'])<span class="text-muted">· N.° {{ str_pad($v['numero'], 6, '0', STR_PAD_LEFT) }}</span>@endif</h1>
+        <h1 class="h4 mb-0" id="titulo-venta">{{ $est === 'BORRADOR' ? 'Venta pendiente' : 'Comprobante interno' }} #{{ $v['id'] }} @if($v['numero'])<span class="text-muted">· N.° {{ str_pad($v['numero'], 6, '0', STR_PAD_LEFT) }}</span>@endif</h1>
         <span class="badge text-bg-{{ $color }} align-self-start" id="estado">{{ $est === 'ANULADA' ? 'ANULADA' : ucfirst(strtolower($est)) }}</span>
     </div>
     <p class="mt-2 mb-1">Cliente: <strong>{{ $v['cliente'] }}</strong> ({{ $v['cliente_nit'] }})</p>
@@ -77,6 +77,11 @@
             if (x.s === 401 || x.s === 419) { window.location = '{{ route('login') }}'; return; }
             if (x.d.ok) {
                 var c = x.d.comprobante || {};
+var num = c.numero ? ' <span class="text-muted">· N.° ' + ('000000' + c.numero).slice(-6) + '</span>' : '';
+document.getElementById('titulo-venta').innerHTML = 'Comprobante interno #' + (c.id || '{{ $v['id'] }}') + num;
+var badge = document.getElementById('estado');
+badge.className = 'badge text-bg-success align-self-start';
+badge.textContent = 'Confirmada';
                 aviso('success', (c.repetido ? 'Esta venta ya estaba confirmada; no se duplicó nada.' : '<strong>Venta confirmada.</strong>') +
                     ' N.° ' + (c.numero || '') + ' · Total Q ' + (c.total || '') +
                     '<div class="mt-2"><button class="btn btn-success btn-sm" onclick="location.reload()">Ver comprobante</button></div>');
