@@ -12,7 +12,7 @@
 <body>
 @php
     $role = auth()->check() ? (string) \DB::table('roles')->where('id', auth()->user()->rol_id)->value('nombre') : null;
-    $sections = \App\Support\DatosDemo::roles()[$role] ?? [];
+    $sections = \App\Support\Permisos::roles()[$role] ?? [];
     $links = [
         'panel' => ['Panel principal', 'panel'],
         'ventas' => ['Ventas', 'ventas.index'],

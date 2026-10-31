@@ -216,8 +216,9 @@ class VentaService
         $v = DB::table('ventas as v')
             ->leftJoin('clientes as c', 'c.id', '=', 'v.cliente_id')
             ->leftJoin('usuarios as u', 'u.id', '=', 'v.usuario_confirmacion_id')
+            ->leftJoin('usuarios as ua', 'ua.id', '=', 'v.usuario_anulacion_id')
             ->where('v.id', $ventaId)
-            ->select('v.*', 'c.nombre as cliente', 'c.nit as cliente_nit', 'u.nombre as confirmado_por')
+            ->select('v.*', 'c.nombre as cliente', 'c.nit as cliente_nit', 'u.nombre as confirmado_por', 'ua.nombre as anulado_por')
             ->first();
         if (!$v) {
             return null;
@@ -251,11 +252,187 @@ class VentaService
             'cliente' => $v->cliente ?? 'Consumidor Final', 'cliente_nit' => $v->cliente_nit ?? 'CF',
             'confirmado_por' => $v->confirmado_por, 'fecha_confirmacion' => $v->fecha_confirmacion,
             'token' => $v->token_confirmacion,
+            'anulado_por' => $v->anulado_por, 'fecha_anulacion' => $v->fecha_anulacion,
+            'motivo_anulacion' => $v->motivo_anulacion,
             'lineas' => $lineas,
             'total' => $this->fmt($borrador ? $total : $this->cent($v->total)),
         ];
     }
  
+    /**
+     * CU-07 Crear venta: guarda un BORRADOR con su detalle.
+     * No descuenta inventario; la existencia se valida al confirmar (RN-01).
+     *
+     * @param array<int, array{producto_id:int|string, cantidad:string|float}> $lineas
+     */
+    public function crearBorrador(?Usuario $usuario, ?int $clienteId, array $lineas): int
+    {
+        if (!$usuario || !$usuario->activo) {
+            throw new VentaException('Sesión no válida. Inicie sesión de nuevo.', 401, 'SESION_INVALIDA');
+        }
+        if (DB::table('roles')->where('id', $usuario->rol_id)->value('nombre') !== self::ROL_VENDEDOR) {
+            throw new VentaException('Solo un vendedor puede crear ventas.', 403, 'SIN_PERMISO');
+        }
+
+        // Unir líneas repetidas del mismo producto (la tabla no permite duplicados).
+        $cantidades = [];
+        foreach ($lineas as $l) {
+            $id = (int) ($l['producto_id'] ?? 0);
+            $cant = $this->cent($l['cantidad'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $cantidades[$id] = ($cantidades[$id] ?? 0) + $cant;
+        }
+        if (!$cantidades) {
+            throw new VentaException('Agrega al menos un producto a la venta.', 422, 'CANTIDAD_INVALIDA');
+        }
+
+        return DB::transaction(function () use ($usuario, $clienteId, $cantidades) {
+            if ($clienteId !== null && !DB::table('clientes')->where('id', $clienteId)->exists()) {
+                throw new VentaException('El cliente seleccionado no existe.', 422);
+            }
+            $productos = DB::table('productos')->whereIn('id', array_keys($cantidades))
+                ->orderBy('id')->get()->keyBy('id');
+
+            $errores = [];
+            $filas = [];
+            $totalCent = 0;
+            ksort($cantidades);
+            foreach ($cantidades as $id => $cant) {
+                $p = $productos[$id] ?? null;
+                if (!$p) {
+                    $errores[] = "Producto #{$id} no existe.";
+                    continue;
+                }
+                if (!$p->activo) {
+                    $errores[] = "{$p->codigo} {$p->nombre}: producto inactivo.";
+                    continue;
+                }
+                if ($cant <= 0) {
+                    $errores[] = "{$p->codigo}: la cantidad debe ser mayor que cero.";
+                    continue;
+                }
+                if (in_array($p->unidad_venta, ['UNIDAD', 'CAJA'], true) && $cant % 100 !== 0) {
+                    $errores[] = "{$p->codigo}: la unidad {$p->unidad_venta} solo admite cantidades enteras.";
+                    continue;
+                }
+                $precio = $this->cent($p->precio);
+                $sub = intdiv($cant * $precio + 50, 100);
+                $totalCent += $sub;
+                $filas[] = ['producto_id' => $id, 'cantidad' => $this->fmt($cant),
+                    'precio_unitario' => $this->fmt($precio), 'subtotal' => $this->fmt($sub)];
+            }
+            if ($errores) {
+                throw new VentaException(implode(' | ', $errores), 422, 'CANTIDAD_INVALIDA');
+            }
+
+            $ventaId = DB::table('ventas')->insertGetId([
+                'cliente_id' => $clienteId,
+                'usuario_creacion_id' => $usuario->id,
+                'estado' => 'BORRADOR',
+                'total' => $this->fmt($totalCent),
+                'token_confirmacion' => (string) \Illuminate\Support\Str::uuid(),
+                'created_at' => DB::raw('CURRENT_TIMESTAMP'),
+                'updated_at' => DB::raw('CURRENT_TIMESTAMP'),
+            ]);
+            DB::table('detalle_venta')->insert(array_map(fn ($f) => $f + ['venta_id' => $ventaId], $filas));
+
+            DB::table('auditoria')->insert([
+                'usuario_id' => $usuario->id,
+                'operacion' => 'Crear venta',
+                'entidad' => 'ventas',
+                'registro_id' => $ventaId,
+                'valor_nuevo' => json_encode(['estado' => 'BORRADOR', 'total' => $this->fmt($totalCent), 'productos' => count($filas)]),
+            ]);
+
+            return $ventaId;
+        });
+    }
+
+    /**
+     * CU-10 Anular venta (RN-06): conserva la venta, la marca ANULADA y
+     * regresa el inventario una sola vez con movimientos ENTRADA_ANULACION.
+     */
+    public function anular(int $ventaId, ?Usuario $usuario, ?string $motivo): array
+    {
+        if (!$usuario || !$usuario->activo) {
+            throw new VentaException('Sesión no válida. Inicie sesión de nuevo.', 401, 'SESION_INVALIDA');
+        }
+        $rol = DB::table('roles')->where('id', $usuario->rol_id)->value('nombre');
+        if (!in_array($rol, ['Administrador', 'Gerente'], true)) {
+            DB::table('auditoria')->insert([
+                'usuario_id' => $usuario->id,
+                'operacion' => 'Acceso denegado',
+                'entidad' => 'ventas',
+                'registro_id' => $ventaId,
+                'motivo' => "Intento de anular venta con rol {$rol}",
+            ]);
+            throw new VentaException('Acceso denegado.', 403, 'SIN_PERMISO');
+        }
+        $motivo = trim((string) $motivo);
+        if (mb_strlen($motivo) < 10) {
+            throw new VentaException('El motivo debe tener al menos 10 caracteres.', 422, 'MOTIVO_INVALIDO');
+        }
+
+        return DB::transaction(function () use ($ventaId, $usuario, $motivo) {
+            // Mismo orden de bloqueo que confirmar: venta -> productos por ID.
+            $venta = DB::table('ventas')->where('id', $ventaId)->lockForUpdate()->first();
+            if (!$venta) {
+                throw new VentaException('La venta no existe.', 404);
+            }
+            if ($venta->estado === 'ANULADA') {
+                throw new VentaException('La venta ya estaba anulada; el inventario no se revierte dos veces.', 409, 'VENTA_ANULADA');
+            }
+            if ($venta->estado !== 'CONFIRMADA') {
+                throw new VentaException('Solo se anulan ventas confirmadas.', 409, 'VENTA_NO_CONFIRMADA');
+            }
+
+            $detalles = DB::table('detalle_venta')->where('venta_id', $ventaId)->orderBy('producto_id')->get();
+            $productos = DB::table('productos')->whereIn('id', $detalles->pluck('producto_id')->all())
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+
+            DB::table('ventas')->where('id', $ventaId)->update([
+                'estado' => 'ANULADA',
+                'usuario_anulacion_id' => $usuario->id,
+                'fecha_anulacion' => DB::raw('CURRENT_TIMESTAMP(6)'),
+                'motivo_anulacion' => $motivo,
+                'updated_at' => DB::raw('CURRENT_TIMESTAMP'),
+            ]);
+
+            foreach ($detalles as $d) {
+                $p = $productos[$d->producto_id];
+                $nueva = $this->cent($p->existencia) + $this->cent($d->cantidad);
+                DB::table('productos')->where('id', $p->id)->update([
+                    'existencia' => $this->fmt($nueva),
+                    'updated_at' => DB::raw('CURRENT_TIMESTAMP'),
+                ]);
+                // UNIQUE (venta_id, producto_id, tipo) impide revertir dos veces.
+                DB::table('movimientos_inventario')->insert([
+                    'producto_id' => $p->id,
+                    'usuario_id' => $usuario->id,
+                    'venta_id' => $ventaId,
+                    'entrada_inventario_id' => null,
+                    'tipo' => 'ENTRADA_ANULACION',
+                    'cantidad' => $this->fmt($this->cent($d->cantidad)),
+                    'existencia_resultante' => $this->fmt($nueva),
+                ]);
+            }
+
+            DB::table('auditoria')->insert([
+                'usuario_id' => $usuario->id,
+                'operacion' => 'Anular venta',
+                'entidad' => 'ventas',
+                'registro_id' => $ventaId,
+                'motivo' => $motivo,
+                'valor_anterior' => json_encode(['estado' => 'CONFIRMADA', 'numero' => $venta->numero, 'total' => $venta->total]),
+                'valor_nuevo' => json_encode(['estado' => 'ANULADA', 'productos_revertidos' => $detalles->count()]),
+            ]);
+
+            return $this->detalle($ventaId);
+        }, 3);
+    }
+
     /** "12.50" -> 1250 */
     private function cent(string|int|float|null $v): int
     {
