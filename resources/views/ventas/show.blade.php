@@ -36,17 +36,20 @@
     @endif
     @if ($est !== 'BORRADOR')
         <button class="btn btn-outline-secondary mt-3" onclick="window.print()">Imprimir comprobante</button>
-        @if (in_array(DB::table('roles')->where('id', auth()->user()->rol_id)->value('nombre'), ['Administrador', 'Gerente'], true))
+        @if ($est === 'ANULADA')
+            <div class="alert alert-danger mt-3 mb-0">Anulada por <strong>{{ $v['anulado_por'] }}</strong> el {{ \Illuminate\Support\Carbon::parse($v['fecha_anulacion'])->format('d/m/Y H:i') }}. Motivo: {{ $v['motivo_anulacion'] }}. El inventario ya se regresó.</div>
+        @elseif (in_array(DB::table('roles')->where('id', auth()->user()->rol_id)->value('nombre'), ['Administrador', 'Gerente'], true))
             <div class="mt-4 pt-3 border-top">
-                <h2 class="h6">Anular venta (demostración)</h2>
-                <p class="text-muted small">La anulación no modifica la base de datos en este prototipo.</p>
-                <form method="post" action="{{ route('ventas.anular-demo', $v['id']) }}" class="row g-2">
+                <h2 class="h6">Anular venta</h2>
+                <p class="text-muted small">La venta se conserva como ANULADA y las existencias regresan una sola vez.</p>
+                <form method="post" action="{{ route('ventas.anular', $v['id']) }}" class="row g-2" onsubmit="if(!confirm('¿Anular esta venta? Esta acción no se puede deshacer.')){return false;}var b=this.querySelector('button');b.disabled=true;b.innerHTML='Anulando…';">
                     @csrf
                     <div class="col-12 col-md-8">
                         <label class="visually-hidden" for="motivo_anulacion">Motivo de anulación</label>
-                        <input id="motivo_anulacion" name="motivo_anulacion" minlength="10" maxlength="500" required class="form-control" placeholder="Indica un motivo de al menos 10 caracteres">
+                        <input id="motivo_anulacion" name="motivo_anulacion" minlength="10" maxlength="500" required value="{{ old('motivo_anulacion') }}" class="form-control @error('motivo_anulacion') is-invalid @enderror" placeholder="Indica un motivo de al menos 10 caracteres">
+                        @error('motivo_anulacion')<div class="invalid-feedback">{{ $message }}</div>@enderror
                     </div>
-                    <div class="col-12 col-md-4"><button class="btn btn-outline-danger">Registrar anulación</button></div>
+                    <div class="col-12 col-md-4"><button class="btn btn-outline-danger w-100">Anular venta</button></div>
                 </form>
             </div>
         @endif

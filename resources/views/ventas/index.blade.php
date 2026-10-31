@@ -2,7 +2,7 @@
 @section('titulo', 'Ventas')
 @section('contenido')
 @php $borradores = collect($ventas)->where('estado', 'BORRADOR')->count(); @endphp
-<h1 class="h3">Ventas</h1>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2"><h1 class="h3">Ventas</h1>@if($puedeCrear)<a class="btn btn-primary" href="{{ route('ventas.create') }}">+ Nueva venta</a>@endif</div>
 <p class="text-muted">{{ $borradores }} {{ $borradores === 1 ? 'venta pendiente' : 'ventas pendientes' }} de confirmar.</p>
 <div class="card"><div class="table-responsive">
 <table class="table table-hover align-middle mb-0">
